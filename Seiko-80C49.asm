@@ -24,11 +24,11 @@ reset:
 ;
 interrupt:
 	orl p2,#040H	; set P2.3 (input !FEED / PF key)
-	jmp L006E		; jump to interrupt service routine
+	jmp L006E	; jump to interrupt service routine
 
 ;
 counterinterrupt:
-	xch	a,r5
+	xch a,r5
 	mov a,r4
 	outl bus,a
 	stop tcnt
@@ -53,18 +53,18 @@ initialize:
 ; 
 L0018:
 	; Clears Data RAM locations @021H through @058H
-	clr a			; used to write zeroes
+	clr a		; used to write zeroes
 	mov r0,#021H	; start address
 	mov r1,#038H	; number of bytes to clear
 L001D:
-	mov @r0,a		; clear @R0
-	inc r0			; increment R0
+	mov @r0,a	; clear @R0
+	inc r0		; increment R0
 	djnz r1,L001D	; loop for R1 times
 	
-	call L022C		; initialize 40-byte buffer (@058-@07F) to #060H
+	call L022C	; initialize 40-byte buffer (@058-@07F) to #060H
 L0023:
 	call L00F0
-	call L022C		; initialize 40-byte buffer (@058-@07F) to #060H
+	call L022C	; initialize 40-byte buffer (@058-@07F) to #060H
 L0027:
 	mov r0,#022H
 	mov a,@r0
@@ -89,14 +89,14 @@ L003D:
 	cpl a
 	jb3 L0069
 L0043:
-	clr f1			; clear F1 flag (ready for input data)
-	en i			; enable external interrupts
+	clr f1		; clear F1 flag (ready for input data)
+	en i		; enable external interrupts
 	anl p2,#0BFH	; clear P2.6 (!READY) output
 	orl p2,#03FH	; set P2.0 through P2.5
 	mov a,r7
 	mov r1,a
 L004B:
-	jf1 L0074		; jump if F1 (data received)
+	jf1 L0074	; jump if F1 (data received)
 	in a,p2
 	jb4 L005B
 	mov a,@r0
@@ -128,16 +128,16 @@ L0069:
 ; 
 L006E:
 	mov r4,a	; save A
-	in a,p1	; get external input data from P1
+	in a,p1		; get external input data from P1
 	xch a,r4	; restore A; move input data to R4
-	dis i	; disable external interrupts
-	cpl f1	; complement flag F1 (indicate data received?)
+	dis i		; disable external interrupts
+	cpl f1		; complement flag F1 (indicate data received?)
 	retr		; return from interrupt
 
 ;
 L0074:
-	mov a,r4		; load received byte
-	jb7 L0089		; jump if bit 7 set
+	mov a,r4	; load received byte
+	jb7 L0089	; jump if bit 7 set
 	add a,#0E0H
 	jc L008F
 	xrl a,#0EDH
@@ -248,7 +248,7 @@ L013C:
 	mov a,@r1
 	mov r4,a
 	mov r0,#051H	; point to 5-byte buffer for character dot matrix data
-	jmp LOOKUP1		; jump to load 5-byte buffer from lookup tables
+	jmp LOOKUP1	; jump to load 5-byte buffer from lookup tables
 
 ; After lookup tables, execution jumps here.
 LOOKUPX:
@@ -434,12 +434,12 @@ L022C:
 	clr c		; clear carry bit
 	mov r0,#058H	; starting location
 	mov r1,#028H	; number of times to loop
-	mov a,#060H		; value to write
+	mov a,#060H	; value to write
 L0233:
-	mov @r0,a		; write A to @R0
+	mov @r0,a	; write A to @R0
 	inc r0		; increment pointer
 	djnz r1,L0233	; loop R1 times
-	ret			; return
+	ret		; return
 
 ;
 L0238:
