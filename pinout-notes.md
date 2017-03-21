@@ -16,7 +16,7 @@ Additional Resources:
 ### 27–34 P1.0–1.7 (input) data bus from 1805
 These inputs are latched by two CD4042 four-bit latches (U6 and U7).
 
-### 21–23 P2.0–2.2 (input) select number of digits (not connected)
+### 21–23 P2.0–2.2 (input) Line width (not connected)
 Selects the number of characters per line:
 
 | P2.2–2.0   | 000 | 001 | 010 | 011 | 100 | 101 | 110 | 111 |

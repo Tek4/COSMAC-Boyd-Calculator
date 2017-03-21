@@ -16,14 +16,16 @@
 ;
 ;
 ;
-	org	00000H
+
+	org 00000H
+
 ;
 reset:
 	nop
 	jmp initialize
 ;
 interrupt:
-	orl p2,#040H	; set P2.3 (input !FEED / PF key)
+	orl p2,#040H	; set P2.6 (/READY) output high
 	jmp L006E	; jump to interrupt service routine
 
 ;
@@ -35,7 +37,8 @@ counterinterrupt:
 	dis tcnti
 	mov a,r5
 	cpl f1
-	retr
+	retr		; return and restore PSW
+
 ;
 initialize:
 	; these appear unnecessary as P1/P2 are high-impedance upon RESET
@@ -46,13 +49,13 @@ initialize:
 	clr a
 	outl bus,a
 	
-	; clear Data RAM location @020H
+	; clear internal RAM location @020H
 	mov r0,#020H
 	mov @r0,a
 
 ; 
 L0018:
-	; Clears Data RAM locations @021H through @058H
+	; Clears internal RAM locations @021H through @058H
 	clr a		; used to write zeroes
 	mov r0,#021H	; start address
 	mov r1,#038H	; number of bytes to clear
@@ -61,10 +64,10 @@ L001D:
 	inc r0		; increment R0
 	djnz r1,L001D	; loop for R1 times
 	
-	call L022C	; initialize 40-byte buffer (@058-@07F) to #060H
+	call clear_line_buffer	; clear line buffer
 L0023:
 	call L00F0
-	call L022C	; initialize 40-byte buffer (@058-@07F) to #060H
+	call clear_line_buffer	; clear line buffer
 L0027:
 	mov r0,#022H
 	mov a,@r0
@@ -92,7 +95,7 @@ L0043:
 	clr f1		; clear F1 flag (ready for input data)
 	en i		; enable external interrupts
 	anl p2,#0BFH	; clear P2.6 (!READY) output
-	orl p2,#03FH	; set P2.0 through P2.5
+	orl p2,#03FH	; set bits used as inputs to high impedance state
 	mov a,r7
 	mov r1,a
 L004B:
@@ -120,19 +123,19 @@ L005B:
 	jnz L004B
 
 L0069:
-	orl p2,#040H
-	dis i
-	jmp L0018
+	orl p2,#040H	; set P2.6
+	dis i		; disable external interrupts
+	jmp L0018	; jump
 
 ; Interrupt service routine (triggered by INT input)
-; 
+; External data is read from P1, stored in R4, and F1 flag is set.
 L006E:
 	mov r4,a	; save A
 	in a,p1		; get external input data from P1
 	xch a,r4	; restore A; move input data to R4
 	dis i		; disable external interrupts
-	cpl f1		; complement flag F1 (indicate data received?)
-	retr		; return from interrupt
+	cpl f1		; set (complement) F1 flag (indicates data received)
+	retr		; return from interrupt and restore PSW
 
 ;
 L0074:
@@ -148,7 +151,7 @@ L0074:
 L0081:
 	xrl a,#015H
 	jnz L0043
-	call L022C
+	call clear_line_buffer	; clear line buffer
 	jmp L0027
 
 ;
@@ -163,48 +166,54 @@ L008F:
 	djnz r3,L0043
 	jmp L0023
 	
+; COMMENTED OUT: ORG DIRECTIVE USED BELOW IN-LIEU OF PADDING
 ; Padding (89-bytes) to align next page of ROM
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+
+	org 000F0H	; align code so line width lookup table (below) lies from 00109H through 00110H
 
 ;
 L00F0:
-	in a,p2
-	mov r3,a
-	in a,p2
-	xrl a,r3
-	anl a,#027H
-	jnz L00F0
-	mov a,r3
-	jb5 L00FD
+	in a,p2		; load P2
+	mov r3,a	; store in R3
+	in a,p2		; load P2 again
+	xrl a,r3	; test if any P2 bits changed
+	anl a,#027H	; mask out all but print head home switch and line width
+	jnz L00F0	; loop back if any bits changed to load P2 again
+	mov a,r3	; load original P2 value
+	jb5 L00FD	; jump if print head home switch
 	call L01C1
 
+; Get line width from lookup table
 L00FD:
-	mov a,r3
-	anl a,#007H
-	add a,#009H
-	movp a,@a
-	mov r3,a
-	mov r0,#022H
-	mov @r0,a
-	jmp L0111
+	mov a,r3	; load R3
+	anl a,#007H	; mask out upper 5-bits to yield 3-bit line width selector value
+	add a,#009H	; add offset to lookup table ROM address LSB
+	movp a,@a	; get line width from lookup table
+	mov r3,a	; store line width in R3
+	mov r0,#022H	; load pointer to @022H
+	mov @r0,a	; store line width in RAM at pointer
+	jmp L0111	; jump over lookup table
 
-; Data table (8-bytes)
+; Line width lookup table (8-bytes).
+;   0=40 characters; 1=32 characters; 2=25 characters; 3=24 characters
+;   4=20 characters; 5=17 characters; 6=16 characters; 7=13 characters
 	db 028H, 020H, 019H, 018H, 014H, 011H, 010H, 00DH
 
 ;
 L0111:
-	mov r7,#058H
-	mov r4,#0D9H
-	mov r5,#029H
-	mov r0,#080H
+	mov r7,#058H	; 88
+	mov r4,#0D9H	; 217
+	mov r5,#029H	; 41
+	mov r0,#080H	; 128
 L0119:
 	clr f0
-	orl p2,#03FH
+	orl p2,#03FH	; set P2 bits used as inputs to high impedance
 L011C:
 	anl p2,#07FH
 	mov a,r0
@@ -346,54 +355,58 @@ L01B5:
 	inc r7
 	djnz r3,L013C
 L01C1:
-	mov r0,#023H
-	mov @r0,#02BH
-	inc r0
-	mov @r0,#067H
+	mov r0,#023H	; load pointer
+	mov @r0,#02BH	; 43
+	inc r0		; increment pointer
+	mov @r0,#067H	; 103
 L01C8:
-	clr f0
-	orl p2,#03FH
+	clr f0		; clear F0 flag
+	orl p2,#03FH	; set P2 input pins to high impedance state
 L01CB:
-	anl p2,#07FH
-	mov a,#080H
-	outl bus,a
-	mov r0,#024H
-	mov a,@r0
-	add a,#0FFH
-	mov @r0,a
-	dec r0
-	mov a,@r0
-	addc a,#0FFH
-	mov @r0,a
-	jnc L01A0
-	in a,p2
-	cpl a
-	jb5 L01C8
-	cpl f0
-	jf0 L01CB
-	clr a
-	outl bus,a
-	orl p2,#080H
-	mov r0,#006H
-L01EA:
-	clr a
-	mov r1,a
-L01EC:
-	djnz r1,L01EC
-	djnz r0,L01EA
-	ret
+	anl p2,#07FH	; 
+	mov a,#080H	; carriage motor bit
+	outl bus,a	; turn on carriage motor
+	mov r0,#024H	; load pointer
+	mov a,@r0	; get value
+	add a,#0FFH	; add 0FFH to value
+	mov @r0,a	; store value
+	dec r0		; decrement pointer
+	mov a,@r0	; load value
+	addc a,#0FFH	; add with carry 0FFH to value
+	mov @r0,a	; store value
+	jnc L01A0	; jump if no carry
+	in a,p2		; load P2
+	cpl a		; complement
+	jb5 L01C8	; jump if bit 5 (print head home switch)
+	cpl f0		; complement F0
+	jf0 L01CB	; loop while F0
 
-; (15-bytes)
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H
+	clr a		; clear A
+	outl bus,a	; set BUS to zero
+	orl p2,#080H	; set P2.7 high
+	mov r0,#006H	; number of times to delay
+L01EA:
+	clr a		; clear A
+	mov r1,a	; clear R1
+L01EC:
+	djnz r1,L01EC	; inner delay loop (256 iterations)
+	djnz r0,L01EA	; outer delay loop (R0 iterations)
+	ret		; return
+
+; COMMENTED OUT: ORG DIRECTIVE USED BELOW IN-LIEU OF PADDING
+; Padding (15-bytes) to align next page of ROM
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H
+
+	org 00200H
 
 ;
 L0200:
-	jnt0 L0217
-	jf0 L0206
+	jnt0 L0217	; jump if not T0 (low)
+	jf0 L0206	; jump if F0 set
 L0204:
-	cpl f0
-	ret
+	cpl f0		; complement F0
+	ret		; return
 
 ;
 L0206:
@@ -411,26 +424,27 @@ L0206:
 
 ;
 L0217:
-	jf0 L022A
-	jt0 L0204
-	mov r0,#024H
-	mov a,@r0
-	add a,#0FFH
-	mov @r0,a
-	dec r0
-	mov a,@r0
-	addc a,#0FFH
-	mov @r0,a
-	jc L0200
-	jmp L0238
+	jf0 L022A	; jump if F0 flag set
+	jt0 L0204	; jump if T0 is high
+	mov r0,#024H	; load pointer
+	mov a,@r0	; load value at pointer
+	add a,#0FFH	; add 0FFH to value
+	mov @r0,a	; store value
+	dec r0		; decrement pointer
+	mov a,@r0	; load value
+	addc a,#0FFH	; add with carry 0FFH to value
+	mov @r0,a	; store value
+	jc L0200	; jump if carry
+	jmp L0238	; jump
 
 ;
 L022A:
-	clr f0
-	ret
+	clr f0		; clear F0 flag
+	ret		; return
 	
-; Write #060H to Data RAM locations @058H through @07FH (40 bytes)
-L022C:
+; Clears 40-byte line buffer (@058H through @07FH) by writing #060H (space character) to
+; each character location.
+clear_line_buffer:
 	clr c		; clear carry bit
 	mov r0,#058H	; starting location
 	mov r1,#028H	; number of times to loop
@@ -443,42 +457,49 @@ L0233:
 
 ;
 L0238:
-	clr a
-	outl bus,a
-	mov psw,a
-	dis i
-	dis tcnti
-	stop tcnt
-	call L024C
-	orl p1,#0FFH
-	orl p2,#0FFH
+	clr a		; zero
+	outl bus,a	; set BUS to zero
+	mov psw,a	; set PSW to zero (resets stack pointer)
+	dis i		; disable external interrupt
+	dis tcnti	; disable timer/counter interrupt
+	stop tcnt	; stop timer/counter
+	call L024C	; do-nothing subroutine (returns)
+	orl p1,#0FFH	; set P1 to high impedance
+	orl p2,#0FFH	; set P2 to high impedance
+
+; Endless loop while P2.4 is high
 L0244:
-	in a,p2
-	jb4 L0244
-	in a,p2
-	jb4 L0244
-	jmp initialize
+	in a,p2		; load P2
+	jb4 L0244	; loop while P2.4 is high
+	in a,p2		; load P2 again
+	jb4 L0244	; loop while P2.4 is high
+	jmp initialize	; jump to initialize
+
+; Do-nothing subroutine.
 L024C:
-	retr
+	retr		; return
 	
+; COMMENTED OUT: ORG DIRECTIVE USED BELOW IN-LIEU OF PADDING
 ; Padding (269-bytes) to align character dot matrix tables at end of ROM
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+
+	org 0035AH	; align code so lookup table lies from 00360H through 003FFH
 
 ; Get character dot matrix data for column 1
 LOOKUP1:
@@ -500,13 +521,16 @@ LOOKUP1:
 	db 008H, 00AH, 00EH, 004H, 000H, 044H, 040H, 042H, 022H, 000H, 078H, 03FH, 002H, 004H, 032H, 002H
 	db 02AH, 038H, 040H, 00AH, 004H, 040H, 04AH, 004H, 00EH, 07CH, 07EH, 07EH, 00EH, 042H, 002H, 007H
 
+; COMMENTED OUT: ORG DIRECTIVE USED BELOW IN-LIEU OF PADDING
 ; Padding (90-bytes) to align next page of ROM
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+
+	org 0045AH	; align code so lookup table lies from 00460H through 004FFH
 
 ; Get character dot matrix data for column 2
 LOOKUP2:
@@ -528,13 +552,16 @@ LOOKUP2:
 	db 046H, 04AH, 000H, 045H, 07FH, 024H, 042H, 02AH, 012H, 040H, 000H, 044H, 042H, 002H, 002H, 012H
 	db 02AH, 024H, 028H, 03EH, 07FH, 042H, 04AH, 005H, 040H, 000H, 040H, 042H, 002H, 042H, 004H, 005H
 
+; COMMENTED OUT: ORG DIRECTIVE USED BELOW IN-LIEU OF PADDING
 ; Padding (90-bytes) to align next page of ROM
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+
+	org 0055AH	; align code so lookup table lies from 00560H through 005FFH
 
 ; Get character dot matrix data for column 3
 LOOKUP3:
@@ -556,13 +583,16 @@ LOOKUP3:
 	db 04AH, 03EH, 04EH, 03DH, 008H, 01FH, 042H, 012H, 07FH, 020H, 002H, 044H, 042H, 004H, 07FH, 022H
 	db 02AH, 022H, 010H, 04AH, 004H, 042H, 04AH, 045H, 020H, 07EH, 020H, 042H, 042H, 040H, 001H, 007H
 
+; COMMENTED OUT: ORG DIRECTIVE USED BELOW IN-LIEU OF PADDING
 ; Padding (90-bytes) to align next page of ROM
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+
+	org 0065AH	; align code so lookup table lies from 00660H through 006FFH
 
 ; Get character dot matrix data for column 4
 LOOKUP4:
@@ -572,7 +602,7 @@ LOOKUP4:
 	inc r0		; increment pointer
 	jmp LOOKUP5	; jump to next lookup table
 	
-; Character Dot Matrix Data - Column 4 (160 characters: ASCII 020H–07FH and 0A0H–0DFHbytes)
+; Character Dot Matrix Data - Column 4 (160 characters: ASCII 020H–07FH and 0A0H–0DFH)
 	db 000H, 000H, 007H, 07FH, 02AH, 064H, 022H, 000H, 041H, 01CH, 00CH, 008H, 000H, 008H, 000H, 004H
 	db 045H, 040H, 049H, 04BH, 07FH, 045H, 049H, 005H, 049H, 029H, 000H, 000H, 041H, 014H, 014H, 009H
 	db 041H, 012H, 049H, 041H, 022H, 049H, 009H, 049H, 008H, 041H, 03FH, 022H, 040H, 002H, 010H, 041H
@@ -584,13 +614,16 @@ LOOKUP4:
 	db 032H, 009H, 020H, 005H, 010H, 004H, 042H, 02AH, 00EH, 01FH, 004H, 044H, 022H, 008H, 002H, 052H
 	db 02AH, 020H, 028H, 04AH, 014H, 07EH, 04AH, 025H, 01EH, 040H, 018H, 042H, 022H, 020H, 002H, 000H
 
+; COMMENTED OUT: ORG DIRECTIVE USED BELOW IN-LIEU OF PADDING
 ; Padding (90-bytes) to align next page of ROM
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
-	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+;	db 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H, 000H
+
+	org 0075AH	; align code so lookup table ends at 007FFH
 
 ; Get character dot matrix data for column 5
 LOOKUP5:
@@ -599,8 +632,11 @@ LOOKUP5:
 	mov @r0,a	; store A to @R0
 	jmp LOOKUPX	; Done with lookup tables. Jump back.
 
-; Padding (1-byte) to align data table
-	db 000H
+; COMMENTED OUT: ORG DIRECTIVE USED BELOW IN-LIEU OF PADDING
+; Padding (1-byte) to align lookup table (because the INC R0 instruction is not used for 5th lookup)
+;	db 000H
+
+	org 00760H	; align lookup table to 00760H through 007FFH
 
 ; Character Dot Matrix Data - Column 5 (160 characters: ASCII 020H–07FH and 0A0H–0DFH)
 	db 000H, 000H, 000H, 014H, 012H, 062H, 050H, 000H, 000H, 000H, 012H, 008H, 000H, 008H, 000H, 002H
